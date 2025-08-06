@@ -12,65 +12,203 @@ import datetime
 GEMINI_API_KEY = "AIzaSyAzPkgNT0nd4-IP_svJJFSmSWLZ5fZ_idA"
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key={GEMINI_API_KEY}"
 
+# --- Helper to determine status from percentage ---
+def get_crowding_status(percentage):
+    if percentage == 0:
+        return "not operating"
+    elif percentage <= 20:
+        return "not crowded"
+    elif percentage <= 50:
+        return "slightly crowded"
+    elif percentage <= 80:
+        return "moderately crowded"
+    elif percentage <= 99:
+        return "very crowded"
+    else: # 100%
+        return "overcrowded"
+
+# --- Simulated Crowding Data (Based on scheduling.pdf and bus line.pdf heatmaps) ---
+# Data structured as: 'Line': { 'Hour X': {'percentage': Y, 'status': Z} }
+# Percentages are estimated from the heatmap colors.
+# Hours are 0-23.
+SIMULATED_CROWDING_DATA = {
+    'M1': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M2': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M3': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M4': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M5': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M6': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M7': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'M8': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '22': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '24': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'N22': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    'N23': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '322': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '326': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '327': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+    '330': {
+        f'Hour {h}': {'percentage': 0, 'status': 'not operating'} for h in range(24)
+    },
+}
+
+# Populate data based on heatmaps and operational times
+# M1-M7: ~04:30 AM - ~02:00 AM (7 days)
+for line in ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7']:
+    for h in range(4, 23): # Roughly 4 AM to 1 AM (next day)
+        if 6 <= h <= 9: # Morning peak
+            perc = 70 if line in ['M2'] else 85 if line in ['M7'] else 90 # Example variations
+        elif 12 <= h <= 14: # Midday
+            perc = 30 if line in ['M1', 'M2'] else 50 if line in ['M7'] else 40
+        elif 16 <= h <= 19: # Evening peak
+            perc = 75 if line in ['M1'] else 80 if line in ['M2'] else 95 if line in ['M7'] else 90
+        elif h >= 22 or h <= 3: # Late night/early morning (still operating)
+            perc = 10
+        else:
+            perc = 20 # Off-peak
+        SIMULATED_CROWDING_DATA[line][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+# M8: ~04:47 AM - ~01:30-02:00 AM (7 days)
+for h in range(5, 23): # Roughly 5 AM to 1 AM (next day)
+    if 7 <= h <= 9: # Morning peak
+        perc = 80
+    elif 12 <= h <= 14: # Midday
+        perc = 45
+    elif 16 <= h <= 19: # Evening peak
+        perc = 85
+    elif h >= 22 or h <= 4: # Late night/early morning (still operating)
+        perc = 15
+    else:
+        perc = 25
+    SIMULATED_CROWDING_DATA['M8'][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+# Lines 22, 24: Weekday peaks only (6:00-20:00)
+for line in ['22', '24']:
+    for h in range(6, 20): # 6 AM to 8 PM
+        if 7 <= h <= 9 or 16 <= h <= 18: # Peaks
+            perc = 60 if line == '22' else 70
+        else:
+            perc = 30 if line == '22' else 40
+        SIMULATED_CROWDING_DATA[line][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+# Night lines N22, N23: Overnight only (22:00-04:00), Mon-Sat nights only
+# For simplicity, we'll show data for all days, but note it's primarily Mon-Sat nights.
+for line in ['N22', 'N23']:
+    for h in [22, 23, 0, 1, 2, 3]: # 10 PM to 3 AM (next day)
+        perc = 40 if line == 'N22' else 50
+        SIMULATED_CROWDING_DATA[line][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+
+# R-net regional lines (322, 326, 327, 330): Weekday daytime (6:00-20:00)
+# Line 326: Monday & Friday only
+for line in ['322', '327', '330']:
+    for h in range(6, 20): # 6 AM to 8 PM
+        if 7 <= h <= 9 or 16 <= h <= 18: # Peaks
+            perc = 70 if line == '322' else 60
+        else:
+            perc = 30 if line == '322' else 25
+        SIMULATED_CROWDING_DATA[line][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+# Line 326 (Monday & Friday only, 6:00-20:00) - for simplicity in this general simulation,
+# we'll include it in the general hourly data, but note its limited days.
+for h in range(6, 20):
+    if 7 <= h <= 9 or 16 <= h <= 18:
+        perc = 50
+    else:
+        perc = 20
+    SIMULATED_CROWDING_DATA['326'][f'Hour {h}'] = {'percentage': perc, 'status': get_crowding_status(perc)}
+
+
+# --- Extracted Bus Schedule Data from scheduling.pdf ---
+# This dictionary contains detailed operational schedules for each bus line.
+BUS_SCHEDULE_DATA = {
+    "M1": {"Route": "Almere Centrum → Almere Haven", "Start Time": "04:13", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M2": {"Route": "Almere Centrum → Almere Buiten", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M3": {"Route": "Almere Muziekwijk → Almere Centrum", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M4": {"Route": "Almere Poort → Almere Centrum", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M5": {"Route": "Almere Parkwijk → Almere Centrum", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M6": {"Route": "Noorderplassen Almere Centrum", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M7": {"Route": "Almere Oostvaarders → Almere Centrum", "Start Time": "04:30", "End Time": "02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "M8": {"Route": "Nobelhorst → Almere Centrum", "Start Time": "04:47", "End Time": "01:30-02:00", "Days of Operation": "7 days", "Service Type": "Metro (allGo)", "Weekend Service": "Yes"},
+    "22": {"Route": "Pontonweg → Station Buiten", "Start Time": "06:00", "End Time": "20:00", "Days of Operation": "Weekdays (Mon-Fri)", "Service Type": "Local (FlexiGo)", "Weekend Service": "No"},
+    "24": {"Route": "Station Poort → Duinstraat", "Start Time": "06:00", "End Time": "20:00", "Days of Operation": "Weekdays (Mon-Fri), summer", "Service Type": "Local (DuinGo)", "Weekend Service": "No"},
+    "N22": {"Route": "Amsterdam Leidseplein → Almere Buiten", "Start Time": "22:00", "End Time": "04:00", "Days of Operation": "Nights (Mon-Sat only)", "Service Type": "NightGo", "Weekend Service": "No (daytime only)"},
+    "N23": {"Route": "Amsterdam Centraal → Almere Centrum", "Start Time": "22:00", "End Time": "04:00", "Days of Operation": "Nights (Mon-Sat only)", "Service Type": "NightGo", "Weekend Service": "No (daytime only)"},
+    "322": {"Route": "Parkwijk → Amsterdam Amstel", "Start Time": "08:11", "End Time": "01:30", "Days of Operation": "7 days", "Service Type": "R-net", "Weekend Service": "Yes"},
+    "326": {"Route": "Almere Centrum Blaricum", "Start Time": "06:00", "End Time": "20:00", "Days of Operation": "Monday & Friday only", "Service Type": "R-net", "Weekend Service": "No"},
+    "327": {"Route": "Almere Haven → Amsterdam Amstel", "Start Time": "06:00", "End Time": "20:00", "Days of Operation": "Weekdays (Mon-Fri)", "Service Type": "R-net", "Weekend Service": "No"},
+    "330": {"Route": "Almere Buiten → Bijlmer ArenA", "Start Time": "06:00", "End Time": "20:00", "Days of Operation": "Weekdays (Mon-Fri)", "Service Type": "R-net", "Weekend Service": "No"}
+}
+
+
 # --- Load and Analyze Survey Data from CSV ---
 try:
     df = pd.read_csv("AlmereBot/urban.csv")
 
     # Clean and analyze the data to create a summary for the chatbot
+    # Ensure column names match your CSV exactly
     issues_frustration = df['What issues frustrate you most about Almere Bus line?'].value_counts()
-    commute_time = df['What time do you usually leave for work/school?'].str[:2].astype(int).mean()
-    age_average = df['What is your age?'].mean()
+    
+    # Handle potential non-numeric values in 'What time do you usually leave for work/school?'
+    # Convert to datetime objects for proper averaging
+    df['Departure_Hour'] = df['What time do you usually leave for work/school?'].apply(lambda x: pd.to_datetime(x, format='%H:%M:%S', errors='coerce').hour if pd.notna(x) else None)
+    commute_time_average_hour = df['Departure_Hour'].mean() if df['Departure_Hour'].notna().any() else None
+
     primary_transport = df['What is your primary mode of transportation?'].value_counts().idxmax()
     crowd_levels = df['How crowded is your usual bus during peak hours?'].value_counts()
+
+    # Safely get the count for app openness
+    app_openness_col = 'Would you be open to using an app that gives personal travel advice based on real-time crowd levels?'
+    if app_openness_col in df.columns:
+        open_to_app_count = df[df[app_openness_col] == 'Yes'].shape[0]
+    else:
+        open_to_app_count = "N/A (column not found)"
 
     csv_data_summary = f"""
     Summary of Urban Mobility Survey responses from Almere:
     - The most common frustrations with the bus line are: {issues_frustration.head(3).to_dict()}
-    - The average commuter leaves for work/school around {commute_time:.0f}:00.
+    - The average commuter leaves for work/school around {commute_time_average_hour:.0f}:00.
     - The most common primary mode of transportation is: {primary_transport}.
     - Commuters perceive peak hour crowding as follows: {crowd_levels.to_dict()}.
-    - A significant number of people {df[df['Would you be open to using an app that gives personal travel advice based on real-time crowd levels?'] == 'Yes'].shape[0]} are open to using a travel advice app.
+    - A significant number of people ({open_to_app_count}) are open to using a travel advice app.
     """
 except FileNotFoundError:
     st.error("Survey data file not found. The bot will use general knowledge instead.")
     csv_data_summary = "No survey data available for analysis."
+except Exception as e:
+    st.error(f"Error loading or processing survey data: {e}. The bot will use general knowledge instead.")
+    csv_data_summary = "Error processing survey data for analysis."
 
-# --- Simulated Crowding Data ---
-# This dictionary simulates real-time crowding data based on the provided heatmap image.
-SIMULATED_CROWDING_DATA = {
-    'M1': {
-        '7 AM': {'status': 'moderately crowded', 'percentage': 70},
-        '8 AM': {'status': 'very crowded', 'percentage': 95},
-        '1 PM': {'status': 'not crowded', 'percentage': 30},
-        '5 PM': {'status': 'moderately crowded', 'percentage': 75},
-        '6 PM': {'status': 'very crowded', 'percentage': 90},
-        '2 AM': {'status': 'not crowded', 'percentage': 5}
-    },
-    'M2': {
-        '7 AM': {'status': 'moderately crowded', 'percentage': 65},
-        '8 AM': {'status': 'very crowded', 'percentage': 85},
-        '1 PM': {'status': 'not crowded', 'percentage': 25},
-        '5 PM': {'status': 'very crowded', 'percentage': 80},
-        '6 PM': {'status': 'moderately crowded', 'percentage': 60},
-        '2 AM': {'status': 'not crowded', 'percentage': 10}
-    },
-    'M7': {
-        '7 AM': {'status': 'very crowded', 'percentage': 85},
-        '8 AM': {'status': 'overcrowded', 'percentage': 100},
-        '1 PM': {'status': 'moderately crowded', 'percentage': 50},
-        '5 PM': {'status': 'overcrowded', 'percentage': 100},
-        '6 PM': {'status': 'very crowded', 'percentage': 95},
-        '2 AM': {'status': 'not crowded', 'percentage': 15}
-    },
-    'Bus 24': {
-        '7 AM': {'status': 'not crowded', 'percentage': 40},
-        '8 AM': {'status': 'moderately crowded', 'percentage': 60},
-        '1 PM': {'status': 'not crowded', 'percentage': 35},
-        '5 PM': {'status': 'moderately crowded', 'percentage': 55},
-        '6 PM': {'status': 'moderately crowded', 'percentage': 70},
-        '2 AM': {'status': 'not crowded', 'percentage': 5}
-    }
-}
 
 # --- Conversational Questions for Profile Determination ---
 # These are simplified versions of the survey questions with controlled options.
@@ -78,7 +216,13 @@ CONVERSATIONAL_QUESTIONS = [
     {
         "text": "Hello! I'm your Urbanvind Commuter Chatbot. To get started, I need to understand your travel habits. What time do you usually leave for work/school?",
         "key": "What time do you usually leave for work/school?",
-        "options": ["Before 9:00 AM", "9:00 AM or later"]
+        "options": [
+            "04:00 AM - 07:00 AM (Early Morning)",
+            "07:00 AM - 09:00 AM (Morning Peak)",
+            "09:00 AM - 04:00 PM (Midday)",
+            "04:00 PM - 08:00 PM (Evening Peak)",
+            "08:00 PM - 04:00 AM (Late Night/Overnight)"
+        ]
     },
     {
         "text": "How many days per week do you typically commute?",
@@ -149,34 +293,44 @@ def call_gemini_api(prompt_text):
     return "I'm currently unable to process your request. Please try again later."
 
 
-def generate_bot_response_with_gemini(user_message, selected_profile, csv_summary):
+def generate_bot_response_with_gemini(user_message, selected_profile, csv_summary, bus_schedule_data):
     """
     Generates a tailored bot response using the Gemini API, incorporating
-    the user's profile, simulated crowding data, and CSV survey summary.
+    the user's profile, simulated crowding data, CSV survey summary, and bus schedule data.
     """
     profile_info = COMMUTER_PROFILES.get(selected_profile, {"description": "unknown", "logic_keywords": "unknown"})
     current_hour = datetime.datetime.now().hour
-    current_time_key = '7 AM' if 7 <= current_hour < 9 else '1 PM' if 12 <= current_hour < 14 else '5 PM' if 16 <= current_hour < 18 else '2 AM'
+    current_time_key = f'Hour {current_hour}' # Use exact hour for lookup
 
-    # Construct the prompt for Gemini, including the CSV summary
+    # Get current crowding data for all lines
+    current_crowding_info = {}
+    for line, hours_data in SIMULATED_CROWDING_DATA.items():
+        data = hours_data.get(current_time_key, {'status': 'not operating', 'percentage': 0})
+        current_crowding_info[line] = data
+
+    # Construct the prompt for Gemini, including all relevant data
     prompt = f"""
     You are Urbanvind Commuter Chatbot, a decision support system for Almere residents.
-    Your goal is to provide tailored travel suggestions and information based on the user's commuter profile, real-time (simulated) crowding data, and insights from a survey of Almere commuters.
+    Your goal is to provide tailored travel suggestions and information based on the user's commuter profile, real-time (simulated) crowding data, insights from a survey of Almere commuters, and detailed bus schedules.
 
     Insights from the Almere Commuter Survey:
     {csv_summary}
+
+    Almere Bus Schedules:
+    {json.dumps(bus_schedule_data, indent=2)}
 
     The user's profile is: "{selected_profile}".
     This means: {profile_info['description']}
     Key characteristics of this profile include: {profile_info['logic_keywords']}
 
-    Current simulated crowding data for key routes at {current_time_key}:
-    {json.dumps(SIMULATED_CROWDING_DATA, indent=2)}
+    Current simulated crowding data for Almere bus lines at {current_time_key}:
+    {json.dumps(current_crowding_info, indent=2)}
 
-    Based on the user's profile, the survey insights, and the crowding data, provide a tailored travel suggestion or answer their question.
+    Based on the user's profile, the survey insights, the current crowding data, AND the bus schedule data, provide a tailored travel suggestion or answer their question.
     Keep your response concise, helpful, and align it with their profile's characteristics.
-    If the user asks about crowding, use the provided simulated data.
-    If the user asks for general travel advice for Almere, use the current simulated crowding data and the survey insights to give a general recommendation.
+    If the user asks about crowding, provide specific details from the simulated data.
+    If the user asks for general travel advice for Almere, use the current simulated crowding data and the survey insights to give a general recommendation, considering typical frustrations and popular transport modes.
+    If the user asks about a specific bus line's schedule, provide details from the bus schedule data.
     If the user asks for general advice, use their profile to suggest appropriate actions (e.g., for 'Flexible Avoider', suggest proactive changes; for 'Peak Routine Commuter', acknowledge their routine but gently suggest minor adjustments if needed).
 
     User's message: "{user_message}"
@@ -195,23 +349,29 @@ st.markdown("Your personalized travel assistant for Almere.")
 st.sidebar.title("📊 Live Crowding Data")
 st.sidebar.markdown("*(Simulated data for demonstration)*")
 
-# Get current time to determine peak/off-peak
-current_hour = datetime.datetime.now().hour
-current_time_key = '7 AM' if 7 <= current_hour < 9 else '1 PM' if 12 <= current_hour < 14 else '5 PM' if 16 <= current_hour < 18 else '2 AM'
+# Get current hour for sidebar display
+current_hour_for_display = datetime.datetime.now().hour
+current_time_key_for_display = f'Hour {current_hour_for_display}'
 
-st.sidebar.subheader("Bus Lines")
-for line, times in SIMULATED_CROWDING_DATA.items():
-    if "Bus" in line or line.startswith('M'):
-        data = times.get(current_time_key, {'status': 'not crowded', 'percentage': 0})
-        status = data['status']
-        percentage = data['percentage']
-        color = "green" if percentage < 50 else "orange" if percentage < 80 else "red"
-        st.sidebar.markdown(f"**{line}** at {current_time_key}:")
-        st.sidebar.progress(percentage, text=f"{percentage}% ({status})")
+st.sidebar.subheader("Almere Bus Lines")
+for line, hours_data in SIMULATED_CROWDING_DATA.items():
+    data = hours_data.get(current_time_key_for_display, {'status': 'not operating', 'percentage': 0})
+    status = data['status']
+    percentage = data['percentage']
+    
+    # Determine color for progress bar
+    if percentage == 0:
+        color = "#cccccc" # Grey for not operating
+    elif percentage < 50:
+        color = "#4CAF50" # Green
+    elif percentage < 80:
+        color = "#FFC107" # Orange
+    else:
+        color = "#F44336" # Red
 
-st.sidebar.subheader("Train Lines")
-# The image only shows bus lines, so we'll leave this section as a placeholder.
-st.sidebar.markdown("*(No simulated data for train lines available)*")
+    st.sidebar.markdown(f"**{line}** ({current_time_key_for_display}):")
+    st.sidebar.progress(percentage, text=f"{percentage}% ({status})")
+
 
 # Initialize session state for conversation
 if "chat_phase" not in st.session_state:
@@ -275,7 +435,8 @@ elif st.session_state.chat_phase == "chatting":
 
         with st.chat_message("bot"):
             with st.spinner("Thinking..."):
-                bot_response = generate_bot_response_with_gemini(prompt, st.session_state.selected_profile, csv_data_summary)
+                # Pass the csv_data_summary and BUS_SCHEDULE_DATA to the generate_bot_response_with_gemini function
+                bot_response = generate_bot_response_with_gemini(prompt, st.session_state.selected_profile, csv_data_summary, BUS_SCHEDULE_DATA)
                 st.markdown(bot_response)
             st.session_state.messages.append({"role": "bot", "content": bot_response})
 
