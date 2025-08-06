@@ -62,7 +62,7 @@ def determine_commuter_profile(user_survey_response):
         return "Inflexible Tolerant"
 
     # 3. Peak Routine Commuter: Early, rigid schedule and low flexibility
-    if q7_departure_time == "Before 9:00 AM" and q9_commute_frequency == "5+ days" and q16_change_departure_scale <= 2:
+    if (q7_departure_time == "04:00 AM - 07:00 AM (Early Morning)" or q7_departure_time == "07:00 AM - 09:00 AM (Morning Peak)") and q9_commute_frequency == "5+ days" and q16_change_departure_scale <= 2:
         return "Peak Routine Commuter"
 
     # 4. Late Responder: Reacts in the moment to a full bus, but doesn't proactively plan
@@ -71,10 +71,9 @@ def determine_commuter_profile(user_survey_response):
 
     # 5. Adaptive Midday Rider: A catch-all for other flexible commuters
     # This profile is assigned if a user doesn't fit a more specific, rigid profile.
-    if q7_departure_time == "9:00 AM or later" and q16_change_departure_scale >= 3:
+    if q7_departure_time in ["09:00 AM - 04:00 PM (Midday)", "04:00 PM - 08:00 PM (Evening Peak)", "08:00 PM - 04:00 AM (Late Night/Overnight)"] and q16_change_departure_scale >= 3:
         return "Adaptive Midday Rider"
 
-    # If none of the above conditions are met, we'll assign a default profile
-    # to avoid the 'Unknown Profile' response. The Adaptive Midday Rider is a good
-    # general profile for a non-specific user.
+    # Fallback to a default profile if none of the specific conditions are met
+    # This ensures "Unknown Profile" is never returned.
     return "Adaptive Midday Rider"
